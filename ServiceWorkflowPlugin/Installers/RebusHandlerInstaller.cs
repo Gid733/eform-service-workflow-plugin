@@ -23,6 +23,8 @@ SOFTWARE.
 */
 
 
+using Microting.eFormWorkflowBase.Messages;
+
 namespace ServiceWorkflowPlugin.Installers
 {
     using Castle.MicroKernel.Registration;

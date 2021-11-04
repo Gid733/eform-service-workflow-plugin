@@ -22,6 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+using Microting.EformAngularFrontendBase.Infrastructure.Data;
+using Microting.EformAngularFrontendBase.Infrastructure.Data.Factories;
+using Microting.eFormWorkflowBase.Helpers;
+
 namespace ServiceWorkflowPlugin
 {
     using System;
@@ -56,6 +60,7 @@ namespace ServiceWorkflowPlugin
         private static int _numberOfWorkers = 1;
         private WorkflowPnDbContext _dbContext;
         private DbContextHelper _dbContextHelper;
+        private BaseDbContext _baseDbContext;
 
         public void CoreEventException(object sender, EventArgs args)
         {
@@ -122,12 +127,12 @@ namespace ServiceWorkflowPlugin
                 var dbNameSection = Regex.Match(sdkConnectionString, @"(Database=\w*;)").Groups[0].Value;
                 var dbPrefix = Regex.Match(sdkConnectionString, @"Database=(\d*)_").Groups[1].Value;
 
-                var pluginDbName = $"Initial Catalog={dbPrefix}_eform-angular-workflow-plugin;";
-                var angularDbName = $"Initial Catalog={dbPrefix}_angular;";
+                var pluginDbName = $"Database={dbPrefix}_eform-angular-workflow-plugin;";
+                var angularDbName = $"Database={dbPrefix}_Angular;";
                 var connectionString = sdkConnectionString.Replace(dbNameSection, pluginDbName);
                 var angularConnectionString = sdkConnectionString.Replace(dbNameSection, angularDbName);
-                var serviceWorkflowSettings = new ServiceWorkflowSettings
-                    {AngularConnectionString = angularConnectionString};
+                _baseDbContext = new BaseDbContextFactory().CreateDbContext(new []{angularConnectionString});
+                //    {AngularConnectionString = angularConnectionString};
 
                 var rabbitmqHost = connectionString.Contains("frontend") ? $"frontend-{dbPrefix}-rabbitmq" : "localhost";
 
@@ -162,12 +167,18 @@ namespace ServiceWorkflowPlugin
                         .SingleOrDefault(x => x.Name == "WorkflowBaseSettings:NumberOfWorkers")?.Value;
                     _numberOfWorkers = string.IsNullOrEmpty(temp) ? 1 : int.Parse(temp);
 
+                    var reportHelper = new WorkflowReportHelper(_sdkCore, _dbContextHelper.GetDbContext());
 
                     _container = new WindsorContainer();
                     _container.Register(Component.For<IWindsorContainer>().Instance(_container));
                     _container.Register(Component.For<DbContextHelper>().Instance(_dbContextHelper));
                     _container.Register(Component.For<eFormCore.Core>().Instance(_sdkCore));
-                    _container.Register(Component.For<ServiceWorkflowSettings>().Instance(serviceWorkflowSettings));
+                    _container.Register(Component.For<BaseDbContext>().Instance(_baseDbContext));
+                    _container.Register(Component.For<WorkflowReportHelper>().Instance(reportHelper));
+
+                    var emailHelper = new EmailHelper(_sdkCore, _dbContextHelper, _baseDbContext, reportHelper);
+
+                    _container.Register(Component.For<EmailHelper>().Instance(emailHelper));
                     _container.Install(
                         new RebusHandlerInstaller()
                         , new RebusInstaller(connectionString, _maxParallelism, _numberOfWorkers, "admin", "password", rabbitmqHost)
